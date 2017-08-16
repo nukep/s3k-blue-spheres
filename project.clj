@@ -24,12 +24,12 @@
                 ;; The presence of a :figwheel configuration here
                 ;; will cause figwheel to inject the figwheel client
                 ;; into your build
-                :figwheel {:on-jsload "s3k-blue-spheres.core/on-js-reload"
+                :figwheel {:on-jsload "s3k-blue-spheres.core/on-js-reload"}
                            ;; :open-urls will pop open your application
                            ;; in the default browser once Figwheel has
                            ;; started and compiled your application.
                            ;; Comment this out once it no longer serves you.
-                           :open-urls ["http://localhost:3449/index.html"]}
+                           ;; :open-urls ["http://localhost:3449/index.html"]}
 
                 :compiler {:main s3k-blue-spheres.core
                            :asset-path "js/compiled/out"
