@@ -28,19 +28,6 @@
   (map (fn [x] {:name (x :name) :level (parseLevel (x :data))})
        (test/loadLevels)))
 
-(def itemToChar
-  {:empty      " "
-   :red        "▨"
-   :blue       "◆"
-   :bumper     "✪"
-   :ring       "◎"
-   :trampoline "^"})
-
-(defn presentLevel [level]
-  (->> (level :data)
-       (map #(clojure.string/join " " (map itemToChar %)))
-       (clojure.string/join "\n")))
-
 (defn debugdata [x]
   [:pre [:text (with-out-str (cljs.pprint/pprint x))]])
 
@@ -103,8 +90,8 @@
        (scale (/ 1 RESOLUTION))
        (translate -0.5 (/ -9 RESOLUTION))
        (scale 2)
-      ;  (rotate-at [0 (/ -4 RESOLUTION)] (* r (/ Math/PI 2)))
-       (translate 0 (* t (/ 1 RESOLUTION)))
+       (rotate-at [0 (/ -4 RESOLUTION)] (* r (/ Math/PI 2)))
+       (translate 0 (* t (/ 2 RESOLUTION)))
        (fisheye)
        (scale 800)
        (scale 1 1.2)
@@ -131,22 +118,9 @@
                x (+ (* 2 xx) offset)]
            [[x y] [(inc x) y] [(inc x) (inc y)] [x (inc y)]]))))
 
-
-; assert that only one of x or y is a fraction
-
-;; Returns arguments to pass to tf
-; (defn position-to-tf [x y r])
-
-
 (def keyboard-input (reagent/atom #{}))
 
 (def sonic-state (reagent/atom {:queued-turn nil :transition 0 :position [1 1] :direction :north :mode :forward}))
-
-(def turn-left)
-
-
-(def turn-right)
-
 
 (def turn
   {:left  {:north :west
@@ -238,6 +212,8 @@
               :angle (+ (angle-delta-from-state state)
                         (direction-to-angle (:direction state)))}))
 
+(defn calculated-to-floor-tf [{[x y] :position angle :angle}]
+  {:rotate (if (>= (mod y 2) 1) 1 0) :translate-y (mod y 1)})
 
 (defn keyboard-input-to-buttons [input]
   (let [keycode-to-button
@@ -266,24 +242,18 @@
    (let [keycode (.-keyCode event)]
      (swap! keyboard-input #(disj % keycode)))))
 
-(defn hello-world []
-  (debugdata (remove nil? (for [y (range 32)
-                                x (range 32)]
-                            nil))))
-
-; (tick-sonic-state)
-
 (defn threedee-view []
   (let [tick (reagent/atom 0)]
     (fn []
-      (js/requestAnimationFrame #(swap! tick inc))
-      ((comp vec concat)
-       [:svg {:width 800 :height 400}]
-       [[:ellipse {:cx 400 :cy 570 :rx 400 :ry (* 400 1.2) :fill "#f89018"}]]
-       (map-indexed (fn [idx path]
-                      ^{:key (str idx)}
-                      [:path {:fill "#682408" :d (poly-to-svg-d (map #(tf (Math/sin (* @tick 0.05)) (Math/sin (* @tick 0.1)) %) (polygon-erp 2 path)))}])
-            (checkerboard RESOLUTION RESOLUTION))))))
+      (let [{rotate :rotate translate-y :translate-y} (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state))]
+        ; (js/requestAnimationFrame #(swap! tick inc))
+        ((comp vec concat)
+         [:svg {:width 800 :height 400}]
+         [[:ellipse {:cx 400 :cy 570 :rx 400 :ry (* 400 1.2) :fill "#f89018"}]]
+         (map-indexed (fn [idx path]
+                        ^{:key (str idx)}
+                        [:path {:fill "#682408" :d (poly-to-svg-d (map #(tf rotate translate-y %) (polygon-erp 2 path)))}])
+              (checkerboard RESOLUTION RESOLUTION)))))))
 
 (def twodee-lookup
   {:empty       (fn [x y] nil)
@@ -312,15 +282,15 @@
 (defn show-state []
   (fn []
     [:div
+     [twodee-view]
+     [threedee-view]
      [:h1 [:text "Keyboard input"]]
      (debugdata @keyboard-input)
-    ;  [:div [:text (str @keyboard-input)]]
      (debugdata (keyboard-input-to-buttons @keyboard-input))
      [:h1 [:text "Sonic state"]]
      [:pre [:text (str @sonic-state)]]
      [:pre [:text (str (sonic-state-to-calculated @sonic-state))]]
-     [twodee-view]
-     [threedee-view]]))
+     [:pre [:text (str (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state)))]]]))
 
 ;; Render the application
 (reagent/render-component [show-state]
@@ -328,9 +298,6 @@
 
 (defonce setup-stuff
   (do (js/setTimeout tick-sonic-state 1000)))
-
-;; define your app data so that it doesn't get over-written on reload
-; (defonce app-state (atom {:text "Hello world!"}))
 
 (defn on-js-reload [])
   ;; optionally touch your app-state to force rerendering depending on
