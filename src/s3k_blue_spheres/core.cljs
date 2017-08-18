@@ -83,6 +83,7 @@
 
 (def RESOLUTION 14)
 
+;; input ranges from [0 0] to [RESOLUTION RESOLUTION]
 ;; r is rotation, and ranges from -1 to +1
 ;; t is y translation, and ranges from -1 to 1
 (defn tf [r t input]
@@ -141,7 +142,7 @@
                   :west  [(dec x) y])]
     [(mod nx WIDTH) (mod ny HEIGHT)]))
 
-(def STEPS_BETWEEN_UNIT 16)
+(def STEPS_BETWEEN_UNIT 8)
 (def STEPS_TO_TURN 8)
 
 (defn advance-sonic-state [input state]
@@ -194,10 +195,10 @@
     [(mod nx WIDTH) (mod ny HEIGHT)]))
 
 (def direction-to-angle
-  {:north 270
-   :east 0
-   :south 90
-   :west 180})
+  {:north 0
+   :east 90
+   :south 180
+   :west 270})
 
 (defn angle-delta-from-state
   [{turn :turn transition :transition}]
@@ -212,8 +213,12 @@
               :angle (+ (angle-delta-from-state state)
                         (direction-to-angle (:direction state)))}))
 
+; turn left: 1 -> 0 or 0 -> -1
+; turn right: -1 -> 0 or 0 -> 1
+
 (defn calculated-to-floor-tf [{[x y] :position angle :angle}]
-  {:rotate (if (>= (mod y 2) 1) 1 0) :translate-y (mod y 1)})
+  {:rotate 0 ;(if (>= (mod y 2) 1) 1 0)
+   :translate-y (mod y 2)})
 
 (defn keyboard-input-to-buttons [input]
   (let [keycode-to-button
@@ -253,37 +258,72 @@
          (map-indexed (fn [idx path]
                         ^{:key (str idx)}
                         [:path {:fill "#682408" :d (poly-to-svg-d (map #(tf rotate translate-y %) (polygon-erp 2 path)))}])
-              (checkerboard RESOLUTION RESOLUTION)))))))
+              (checkerboard RESOLUTION RESOLUTION))
+         (let [[x y] (tf rotate translate-y [7 6])]
+           [[:circle {:cx x :cy y :r 25}]]))))))
 
 (def twodee-lookup
-  {:empty       (fn [x y] nil)
-   :red         (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 5 :fill "#f88"}])
+  {:red         (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 5 :fill "#f88"}])
    :blue        (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 4 :fill "blue"}])
    :bumper      (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "#ccc"}])
    :ring        (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "yellow"}])
    :trampoline  (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "orange"}])})
 
+(defn leveldata-to-items [leveldata]
+  (remove nil? (for [y (range HEIGHT)
+                     x (range WIDTH)]
+                 (let [row (get leveldata y)
+                       item (get row x)]
+                   (if (= item :empty) nil {:position [x y] :item item})))))
+
+(defn leveldata-to-items-near [leveldata [px py]]
+  (->> (for [y (range 3)
+             x (range 3)]
+         (let [xoff (* WIDTH (- x 1))
+               yoff (* HEIGHT (- y 1))]
+           (map (fn [{[x y] :position item :item}]
+                  {:position [(+ xoff x (- px)) (+ yoff y (- py))] :item item})
+                (leveldata-to-items leveldata))))
+       (apply concat)
+       (filter (fn [{[x y] :position}]
+                 (<= (Math/hypot x y) 6)))))
+
+(def LEVEL_ITEM (nth levels 6))
+
 (defn twodee-view []
-  (let [levelitem (nth levels 2)
-        name (:name levelitem)
-        level (:level levelitem)
+  (let [name (:name LEVEL_ITEM)
+        level (:level LEVEL_ITEM)
         leveldata (:data level)
         {[px py] :position angle :angle} (sonic-state-to-calculated @sonic-state)]
     ((comp vec concat)
      [:svg {:width 320 :height 320}]
-     (remove nil? (for [y (range HEIGHT)
-                        x (range WIDTH)]
-                    (let [row (get leveldata y)
-                          item (get row x)]
-                      ^{:key (str x "x" y)} ((twodee-lookup item) x y))))
-     [[:path {:d (poly-to-svg-d [[-5 -5] [5 0] [-5 5]])
+     (map (fn [{[x y] :position item :item}]
+             ^{:key (str x "x" y)} ((twodee-lookup item) x y))
+          (leveldata-to-items leveldata))
+     [[:path {:d (poly-to-svg-d [[-3 5] [0 -5] [3 5]])
               :transform (str "translate(" (+ 5 (* 10 px)) " " (+ 5 (* 10 py)) ") rotate(" angle ")")}]])))
+
+(defn twodee-view-tf []
+  (let [leveldata (:data (:level LEVEL_ITEM))
+        calculated (sonic-state-to-calculated @sonic-state)
+        position (:position calculated)
+        angle (:angle calculated)]
+    ((comp vec concat)
+     [:svg {:width 320 :height 320}]
+     (map (fn [{position :position item :item}]
+            (let [[x y] (->> position
+                             (rotate (* Math/PI (/ (- angle) 180)))
+                             (translate 16 16))]
+              ^{:key (str x "x" y)} ((twodee-lookup item) x y)))
+          (leveldata-to-items-near leveldata position))
+     [[:circle {:cx 165 :cy 165 :r 5 :fill "black"}]])))
 
 (defn show-state []
   (fn []
     [:div
      [twodee-view]
-     [threedee-view]
+     [twodee-view-tf]
+     ;; [threedee-view]
      [:h1 [:text "Keyboard input"]]
      (debugdata @keyboard-input)
      (debugdata (keyboard-input-to-buttons @keyboard-input))
