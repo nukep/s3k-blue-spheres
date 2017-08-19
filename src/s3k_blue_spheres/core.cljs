@@ -276,17 +276,25 @@
                        item (get row x)]
                    (if (= item :empty) nil {:position [x y] :item item})))))
 
+;; When calculating whether a distance is within a threshold, it's quicker to skip calculating the square root.
+;; Profiling shows that whenever hypot is in a critical loop, it becomes expensive!
+;;
+;; sqrt(x*x + y*y) <= dist
+;;   is the same as
+;; x*x + y*y <= dist^2
+(defn hypot-squared [x y]
+  (+ (* x x) (* y y)))
+
 (defn leveldata-to-items-near [leveldata [px py]]
-  (->> (for [y (range 3)
-             x (range 3)]
-         (let [xoff (* WIDTH (- x 1))
-               yoff (* HEIGHT (- y 1))]
-           (map (fn [{[x y] :position item :item}]
-                  {:position [(+ xoff x (- px)) (+ yoff y (- py))] :item item})
-                (leveldata-to-items leveldata))))
-       (apply concat)
-       (filter (fn [{[x y] :position}]
-                 (<= (Math/hypot x y) 6)))))
+  (let [items (leveldata-to-items leveldata)]
+    (->> (for [yoff [(- HEIGHT) 0 HEIGHT]
+               xoff [(- WIDTH) 0 WIDTH]]
+           (->> items
+                (map (fn [{[x y] :position item :item}]
+                       {:position [(+ xoff x (- px)) (+ yoff y (- py))] :item item}))
+                (filter (fn [{[x y] :position}]
+                          (<= (hypot-squared x y) (* 6 6))))))
+         (apply concat))))
 
 (def LEVEL_ITEM (nth levels 6))
 
@@ -321,7 +329,7 @@
 (defn show-state []
   (fn []
     [:div
-     [twodee-view]
+     ;; [twodee-view]
      [twodee-view-tf]
      ;; [threedee-view]
      [:h1 [:text "Keyboard input"]]
