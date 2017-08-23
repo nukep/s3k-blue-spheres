@@ -221,24 +221,26 @@
 
 (def YOFF -4)
 
+;; I'm unsure if there are built-ins for this
+(defn filter-key [key pred coll]
+  (filter (comp pred key) coll))
+(defn map-key [key f coll]
+  (map #(assoc % key (f (key %)))
+       coll))
+
 (defn leveldata-to-items-near [leveldata [px py] angle]
-  (let [items (leveldata-to-items leveldata)]
+  (let [items (vec (leveldata-to-items leveldata))]
     (->> (for [yoff [(- HEIGHT) 0 HEIGHT]
                xoff [(- WIDTH) 0 WIDTH]]
            (->> items
-                (map (fn [{[x y] :position item :item}]
-                       {:position [(+ xoff x (- px)) (+ yoff y (- py))] :item item}))
-                ;; pre-filter to include a superset so that rotating doesn't take as long...
                 ;; TODO - this should be refactored so it's not so god damned slow
-                (filter (fn [{[x y] :position}]
-                          (< (hypot-squared x y) (* 12 12))))
-                (map (fn [{position :position item :item}]
-                       {:position (rotate (* Math/PI (/ (- angle) 180)) position) :item item}))
-                (filter (fn [{[x y] :position}]
-                          (and (< (hypot-squared x (+ y YOFF)) (* 8 8))
-                               (< y 2))))
-                (map (fn [{position :position item :item}]
-                       {:position (translate 0 YOFF position) :item item}))))
+                (map-key    :position (fn [[x y]] [(+ xoff x (- px)) (+ yoff y (- py))]))
+                ;; pre-filter to include a superset so that rotating doesn't take as long...
+                (filter-key :position (fn [[x y]] (< (hypot-squared x y) (* 12 12))))
+                (map-key    :position (fn [position] (rotate (* Math/PI (/ angle -180)) position)))
+                (filter-key :position (fn [[x y]] (and (< (hypot-squared x (+ y YOFF)) (* 8 8))
+                                                       (< y 2))))
+                (map-key    :position (fn [position] (translate 0 YOFF position)))))
          (apply concat))))
 
 (defn keyboard-input-to-buttons [input]
