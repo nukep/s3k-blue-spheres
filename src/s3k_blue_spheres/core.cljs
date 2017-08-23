@@ -81,23 +81,6 @@
             points
             (concat (rest points) [(first points)]))))
 
-(def RESOLUTION 14)
-
-;; input ranges from [0 0] to [RESOLUTION RESOLUTION]
-;; r is rotation, and ranges from -1 to +1
-;; t is y translation, and ranges from -1 to 1
-(defn tf [r t input]
-  (->> input
-       (scale (/ 1 RESOLUTION))
-       (translate -0.5 (/ -9 RESOLUTION))
-       (scale 2)
-       (rotate-at [0 (/ -4 RESOLUTION)] (* r (/ Math/PI 2)))
-       (translate 0 (* t (/ 2 RESOLUTION)))
-       (fisheye)
-       (scale 800)
-       (scale 1 1.2)
-       (translate 400 570)))
-
 (defn points-to-svg [points]
   (->> points
        (map-indexed (fn [idx [x y]] ^{:key idx} [:circle {:cx x :cy y :r 2 :fill "orange"}]))
@@ -220,6 +203,44 @@
   {:rotate 0 ;(if (>= (mod y 2) 1) 1 0)
    :translate-y (mod y 2)})
 
+(defn leveldata-to-items [leveldata]
+  (remove nil? (for [y (range HEIGHT)
+                     x (range WIDTH)]
+                 (let [row (get leveldata y)
+                       item (get row x)]
+                   (if (= item :empty) nil {:position [x y] :item item})))))
+
+;; When calculating whether a distance is within a threshold, it's quicker to skip calculating the square root.
+;; Profiling shows that whenever hypot is in a critical loop, it becomes expensive!
+;;
+;; sqrt(x*x + y*y) <= dist
+;;   is the same as
+;; x*x + y*y <= dist^2
+(defn hypot-squared [x y]
+  (+ (* x x) (* y y)))
+
+(def YOFF -4)
+
+(defn leveldata-to-items-near [leveldata [px py] angle]
+  (let [items (leveldata-to-items leveldata)]
+    (->> (for [yoff [(- HEIGHT) 0 HEIGHT]
+               xoff [(- WIDTH) 0 WIDTH]]
+           (->> items
+                (map (fn [{[x y] :position item :item}]
+                       {:position [(+ xoff x (- px)) (+ yoff y (- py))] :item item}))
+                ;; pre-filter to include a superset so that rotating doesn't take as long...
+                ;; TODO - this should be refactored so it's not so god damned slow
+                (filter (fn [{[x y] :position}]
+                          (< (hypot-squared x y) (* 12 12))))
+                (map (fn [{position :position item :item}]
+                       {:position (rotate (* Math/PI (/ (- angle) 180)) position) :item item}))
+                (filter (fn [{[x y] :position}]
+                          (and (< (hypot-squared x (+ y YOFF)) (* 8 8))
+                               (< y 2))))
+                (map (fn [{position :position item :item}]
+                       {:position (translate 0 YOFF position) :item item}))))
+         (apply concat))))
+
 (defn keyboard-input-to-buttons [input]
   (let [keycode-to-button
         {37 :left
@@ -247,20 +268,20 @@
    (let [keycode (.-keyCode event)]
      (swap! keyboard-input #(disj % keycode)))))
 
-(defn threedee-view []
-  (let [tick (reagent/atom 0)]
-    (fn []
-      (let [{rotate :rotate translate-y :translate-y} (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state))]
-        ; (js/requestAnimationFrame #(swap! tick inc))
-        ((comp vec concat)
-         [:svg {:width 800 :height 400}]
-         [[:ellipse {:cx 400 :cy 570 :rx 400 :ry (* 400 1.2) :fill "#f89018"}]]
-         (map-indexed (fn [idx path]
-                        ^{:key (str idx)}
-                        [:path {:fill "#682408" :d (poly-to-svg-d (map #(tf rotate translate-y %) (polygon-erp 2 path)))}])
-              (checkerboard RESOLUTION RESOLUTION))
-         (let [[x y] (tf rotate translate-y [7 6])]
-           [[:circle {:cx x :cy y :r 25}]]))))))
+; (defn threedee-view []
+;   (let [tick (reagent/atom 0)]
+;     (fn []
+;       (let [{rotate :rotate translate-y :translate-y} (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state))]
+;         ; (js/requestAnimationFrame #(swap! tick inc))
+;         ((comp vec concat)
+;          [:svg {:width 800 :height 400}]
+;          [[:ellipse {:cx 400 :cy 570 :rx 400 :ry (* 400 1.2) :fill "#f89018"}]]
+;          (map-indexed (fn [idx path]
+;                         ^{:key (str idx)}
+;                         [:path {:fill "#682408" :d (poly-to-svg-d (map #(tf rotate translate-y %) (polygon-erp 2 path)))}])
+;               (checkerboard RESOLUTION RESOLUTION))
+;          (let [[x y] (tf rotate translate-y [7 6])]
+;            [[:circle {:cx x :cy y :r 25}]]))))))
 
 (def twodee-lookup
   {:red         (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 5 :fill "#f88"}])
@@ -269,34 +290,14 @@
    :ring        (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "yellow"}])
    :trampoline  (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "orange"}])})
 
-(defn leveldata-to-items [leveldata]
-  (remove nil? (for [y (range HEIGHT)
-                     x (range WIDTH)]
-                 (let [row (get leveldata y)
-                       item (get row x)]
-                   (if (= item :empty) nil {:position [x y] :item item})))))
+(def color-lookup
+  {:red         "#f88"
+   :blue        "blue"
+   :bumper      "#ccc"
+   :ring        "yellow"
+   :trampoline  "orange"})
 
-;; When calculating whether a distance is within a threshold, it's quicker to skip calculating the square root.
-;; Profiling shows that whenever hypot is in a critical loop, it becomes expensive!
-;;
-;; sqrt(x*x + y*y) <= dist
-;;   is the same as
-;; x*x + y*y <= dist^2
-(defn hypot-squared [x y]
-  (+ (* x x) (* y y)))
-
-(defn leveldata-to-items-near [leveldata [px py]]
-  (let [items (leveldata-to-items leveldata)]
-    (->> (for [yoff [(- HEIGHT) 0 HEIGHT]
-               xoff [(- WIDTH) 0 WIDTH]]
-           (->> items
-                (map (fn [{[x y] :position item :item}]
-                       {:position [(+ xoff x (- px)) (+ yoff y (- py))] :item item}))
-                (filter (fn [{[x y] :position}]
-                          (<= (hypot-squared x y) (* 6 6))))))
-         (apply concat))))
-
-(def LEVEL_ITEM (nth levels 6))
+(def LEVEL_ITEM (nth levels 0))
 
 (defn twodee-view []
   (let [name (:name LEVEL_ITEM)
@@ -319,19 +320,41 @@
     ((comp vec concat)
      [:svg {:width 320 :height 320}]
      (map (fn [{position :position item :item}]
-            (let [[x y] (->> position
-                             (rotate (* Math/PI (/ (- angle) 180)))
-                             (translate 16 16))]
+            (let [[x y] (translate 16 16 position)]
               ^{:key (str x "x" y)} ((twodee-lookup item) x y)))
-          (leveldata-to-items-near leveldata position))
-     [[:circle {:cx 165 :cy 165 :r 5 :fill "black"}]])))
+          (leveldata-to-items-near leveldata position angle))
+     [[:circle {:cx 165 :cy (+ 165 (* 10 YOFF)) :r 5 :fill "black"}]])))
+
+
+(defn tf [input]
+  (->> input
+       (scale (/ 1 16))
+       (scale 2)
+       (fisheye)
+       (scale 800)
+       (scale 1 1.2)
+       (translate 400 600)))
+
+(defn threedee-view-tf []
+  (let [leveldata (:data (:level LEVEL_ITEM))
+        calculated (sonic-state-to-calculated @sonic-state)
+        position (:position calculated)
+        angle (:angle calculated)]
+    ((comp vec concat)
+     [:svg {:width 800 :height 600}]
+     (map (fn [{position :position item :item}]
+            (let [[x y] (tf position)]
+              ^{:key (str x "x" y)} [:circle {:cx x :cy y :r 15 :fill (color-lookup item)}]))
+          (leveldata-to-items-near leveldata position angle))
+     (let [[x y] (tf [0 YOFF])]
+       [[:circle {:cx x :cy y :r 5 :fill "black"}]]))))
 
 (defn show-state []
   (fn []
     [:div
-     ;; [twodee-view]
-     [twodee-view-tf]
-     ;; [threedee-view]
+     ; [twodee-view]
+     ; [twodee-view-tf]
+     [threedee-view-tf]
      [:h1 [:text "Keyboard input"]]
      (debugdata @keyboard-input)
      (debugdata (keyboard-input-to-buttons @keyboard-input))
