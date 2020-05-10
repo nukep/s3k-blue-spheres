@@ -210,11 +210,11 @@
    :translate-y (mod y 2)})
 
 (defn leveldata-to-items [leveldata]
-  (remove nil? (for [y (range HEIGHT)
-                     x (range WIDTH)]
-                 (let [row (get leveldata y)
-                       item (get row x)]
-                   (if (= item :empty) nil {:position [x y] :item item})))))
+  (vec (remove nil? (for [y (range HEIGHT)
+                          x (range WIDTH)]
+                      (let [row (get leveldata y)
+                            item (get row x)]
+                        (if (= item :empty) nil {:position [x y] :item item}))))))
 
 ;; When calculating whether a distance is within a threshold, it's quicker to skip calculating the square root.
 ;; Profiling shows that whenever hypot is in a critical loop, it becomes expensive!
@@ -235,20 +235,19 @@
   ([key f]      (map #(update % key f)))
   ([key f coll] (map #(update % key f) coll)))
 
-(defn leveldata-to-items-near [leveldata [px py] angle]
-  (let [items (vec (leveldata-to-items leveldata))]
-    (->> (for [yoff [(- HEIGHT) 0 HEIGHT]
-               xoff [(- WIDTH) 0 WIDTH]]
-           (into []
-                 (comp (map-key    :position (fn [[x y]] [(+ xoff x (- px)) (+ yoff y (- py))]))
+(defn items-near [items [px py] angle]
+  (->> (for [yoff [(- HEIGHT) 0 HEIGHT]
+             xoff [(- WIDTH) 0 WIDTH]]
+         (into []
+               (comp (map-key    :position (fn [[x y]] [(+ xoff x (- px)) (+ yoff y (- py))]))
                        ;; pre-filter to include a superset so that rotating doesn't take as long...
-                       (filter-key :position (fn [[x y]] (< (hypot-squared x y) (* 12 12))))
-                       (map-key    :position (fn [pos]   (rotate (* Math/PI (/ angle -180)) pos)))
-                       (filter-key :position (fn [[x y]] (and (< (hypot-squared x (+ y YOFF)) (* 8 8))
-                                                              (< y 2))))
-                       (map-key    :position (fn [pos]   (translate 0 YOFF pos))))
-                 items))
-         (apply concat))))
+                     (filter-key :position (fn [[x y]] (< (hypot-squared x y) (* 12 12))))
+                     (map-key    :position (fn [pos]   (rotate (* Math/PI (/ angle -180)) pos)))
+                     (filter-key :position (fn [[x y]] (and (< (hypot-squared x (+ y YOFF)) (* 8 8))
+                                                            (< y 2))))
+                     (map-key    :position (fn [pos]   (translate 0 YOFF pos))))
+               items))
+       (apply concat)))
 
 (defn keyboard-input-to-buttons [input]
   (let [keycode-to-button
@@ -287,24 +286,26 @@
    :ring        (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "yellow"}])
    :trampoline  (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "orange"}])})
 
-(def LEVEL_ITEM (nth levels 0))
+(def LEVEL_ITEM (nth levels 1))
+(def LEVELDATA_ITEMS (leveldata-to-items (-> LEVEL_ITEM :level :data)))
+
+;; This is a separate component to make rerenders faster - and the map itself doesn't change often.
+(defn twodee-view-map-bg []
+  (into [:g]
+        (map (fn [{[x y] :position item :item}]
+               ^{:key (str x "x" y)} ((twodee-lookup item) x y))
+             LEVELDATA_ITEMS)))
 
 (defn twodee-view []
-  (let [name (:name LEVEL_ITEM)
-        level (:level LEVEL_ITEM)
-        leveldata (:data level)
-        {[px py] :position angle :angle} (sonic-state-to-calculated @sonic-state)]
-    ((comp vec concat)
-     [:svg {:width 320 :height 320}]
-     (map (fn [{[x y] :position item :item}]
-             ^{:key (str x "x" y)} ((twodee-lookup item) x y))
-          (leveldata-to-items leveldata))
-     [[:path {:d (poly-to-svg-d [[-3 5] [0 -5] [3 5]])
-              :transform (str "translate(" (+ 5 (* 10 px)) " " (+ 5 (* 10 py)) ") rotate(" angle ")")}]])))
+  (let [{[px py] :position, angle :angle} (sonic-state-to-calculated @sonic-state)]
+    [:svg {:width 320 :height 320}
+     [twodee-view-map-bg]
+
+     [:path {:d (poly-to-svg-d [[-3 5] [0 -5] [3 5]])
+             :transform (str "translate(" (+ 5 (* 10 px)) " " (+ 5 (* 10 py)) ") rotate(" angle ")")}]]))
 
 (defn twodee-view-tf []
-  (let [leveldata (:data (:level LEVEL_ITEM))
-        calculated (sonic-state-to-calculated @sonic-state)
+  (let [calculated (sonic-state-to-calculated @sonic-state)
         position (:position calculated)
         angle (:angle calculated)]
     ((comp vec concat)
@@ -312,7 +313,7 @@
      (map (fn [{position :position item :item}]
             (let [[x y] (translate 16 16 position)]
               ^{:key (str x "x" y)} ((twodee-lookup item) x y)))
-          (leveldata-to-items-near leveldata position angle))
+          (items-near LEVELDATA_ITEMS position angle))
      [[:circle {:cx 165 :cy (+ 165 (* 10 YOFF)) :r 5 :fill "black"}]])))
 
 
@@ -333,8 +334,7 @@
    :trampoline  "orange"})
 
 (defn threedee-view-tf []
-  (let [leveldata (:data (:level LEVEL_ITEM))
-        calculated (sonic-state-to-calculated @sonic-state)
+  (let [calculated (sonic-state-to-calculated @sonic-state)
         position (:position calculated)
         angle (:angle calculated)]
     ((comp vec concat)
@@ -342,27 +342,34 @@
      (map (fn [{position :position item :item}]
             (let [[x y] (tf position)]
               ^{:key (str x "x" y)} [:circle {:cx x :cy y :r 15 :fill (color-lookup item)}]))
-          (leveldata-to-items-near leveldata position angle))
+          (items-near LEVELDATA_ITEMS position angle))
      (let [[x y] (tf [0 YOFF])]
        [[:circle {:cx x :cy y :r 5 :fill "black"}]]))))
 
-(defn show-state []
+(defn debug-state-section []
+  [:<>
+   [:h1 [:text "Keyboard input"]]
+   [debugdata @keyboard-input]
+   [debugdata (keyboard-input-to-buttons @keyboard-input)]
+
+   [:h1 [:text "Sonic state"]]
+   [debugdata @sonic-state]
+   [debugdata (sonic-state-to-calculated @sonic-state)]
+   [debugdata (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state))]])
+
+(defn app []
   (fn []
     [:div
-     ; [twodee-view]
-     ; [twodee-view-tf]
+     [twodee-view]
+     [twodee-view-tf]
+     [:br]
      [threedee-view-tf]
-     [:h1 [:text "Keyboard input"]]
-     (debugdata @keyboard-input)
-     (debugdata (keyboard-input-to-buttons @keyboard-input))
-     [:h1 [:text "Sonic state"]]
-     [:pre [:text (str @sonic-state)]]
-     [:pre [:text (str (sonic-state-to-calculated @sonic-state))]]
-     [:pre [:text (str (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state)))]]]))
+
+     [debug-state-section]]))
 
 ;; Called on initial page load, and after reloads from file changes.
 (defn ^:dev/after-load start []
-  (rdom/render [show-state]
+  (rdom/render [app]
                (. js/document (getElementById "app"))))
 
 ;; Called once, during initial page load
