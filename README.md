@@ -6,20 +6,20 @@ This is a work-in-progress demo of the Special Stage in Sonic 3 & Knuckles, writ
 
 To get an interactive development environment run:
 
-    lein figwheel
+```
+yarn watch
+```
 
-and open your browser at [localhost:3449](http://localhost:3449/).
+and open your browser at [localhost:3000](http://localhost:3000/).
 This will auto compile and send all changes to the browser without the
 need to reload. After the compilation process is complete, you will
 get a Browser Connected REPL.
 
-To clean all compiled files:
-
-    lein clean
-
 To create a production build run:
 
-    lein do clean, cljsbuild once min
+```
+yarn build
+```
 
 And open your browser in `resources/public/index.html`. You will not
 get live reloading, nor a REPL.
