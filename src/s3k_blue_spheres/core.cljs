@@ -4,6 +4,12 @@
             [reagent.dom :as rdom]
             [clojure.pprint :refer [pprint]]))
 
+;;;;; Global State ;;;;;
+(def keyboard-input (r/atom #{}))
+(def sonic-state (r/atom {:queued-turn nil :transition 0 :position [1 1] :direction :north :mode :forward}))
+;;;;;;;;;;;;;;;;;;;;;;;;
+
+
 (enable-console-print!)
 
 (def WIDTH 32)
@@ -105,9 +111,6 @@
                x (+ (* 2 xx) offset)]
            [[x y] [(inc x) y] [(inc x) (inc y)] [x (inc y)]]))))
 
-(def keyboard-input (r/atom #{}))
-
-(def sonic-state (r/atom {:queued-turn nil :transition 0 :position [1 1] :direction :north :mode :forward}))
 
 (def turn
   {:left  {:north :west
@@ -225,25 +228,26 @@
 (def YOFF -4)
 
 ;; I'm unsure if there are built-ins for this
-(defn filter-key [key pred coll]
-  (filter (comp pred key) coll))
-(defn map-key [key f coll]
-  (map #(assoc % key (f (key %)))
-       coll))
+(defn filter-key
+  ([key pred]      (filter (comp pred key)))
+  ([key pred coll] (filter (comp pred key) coll)))
+(defn map-key
+  ([key f]      (map #(update % key f)))
+  ([key f coll] (map #(update % key f) coll)))
 
 (defn leveldata-to-items-near [leveldata [px py] angle]
   (let [items (vec (leveldata-to-items leveldata))]
     (->> (for [yoff [(- HEIGHT) 0 HEIGHT]
                xoff [(- WIDTH) 0 WIDTH]]
-           (->> items
-                ;; TODO - this should be refactored so it's not so god damned slow
-                (map-key    :position (fn [[x y]] [(+ xoff x (- px)) (+ yoff y (- py))]))
-                ;; pre-filter to include a superset so that rotating doesn't take as long...
-                (filter-key :position (fn [[x y]] (< (hypot-squared x y) (* 12 12))))
-                (map-key    :position (fn [position] (rotate (* Math/PI (/ angle -180)) position)))
-                (filter-key :position (fn [[x y]] (and (< (hypot-squared x (+ y YOFF)) (* 8 8))
-                                                       (< y 2))))
-                (map-key    :position (fn [position] (translate 0 YOFF position)))))
+           (into []
+                 (comp (map-key    :position (fn [[x y]] [(+ xoff x (- px)) (+ yoff y (- py))]))
+                       ;; pre-filter to include a superset so that rotating doesn't take as long...
+                       (filter-key :position (fn [[x y]] (< (hypot-squared x y) (* 12 12))))
+                       (map-key    :position (fn [pos]   (rotate (* Math/PI (/ angle -180)) pos)))
+                       (filter-key :position (fn [[x y]] (and (< (hypot-squared x (+ y YOFF)) (* 8 8))
+                                                              (< y 2))))
+                       (map-key    :position (fn [pos]   (translate 0 YOFF pos))))
+                 items))
          (apply concat))))
 
 (defn keyboard-input-to-buttons [input]
@@ -260,18 +264,6 @@
   (let [buttons (keyboard-input-to-buttons @keyboard-input)]
     (js/setTimeout tick-sonic-state (/ 1000 60))
     (swap! sonic-state #(do (advance-sonic-state buttons %)))))
-
-(set!
- (.-onkeydown js/document)
- (fn [event]
-   (let [keycode (.-keyCode event)]
-     (swap! keyboard-input #(conj % keycode)))))
-
-(set!
- (.-onkeyup js/document)
- (fn [event]
-   (let [keycode (.-keyCode event)]
-     (swap! keyboard-input #(disj % keycode)))))
 
 ; (defn threedee-view []
 ;   (let [tick (r/atom 0)]
@@ -294,13 +286,6 @@
    :bumper      (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "#ccc"}])
    :ring        (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "yellow"}])
    :trampoline  (fn [x y] [:circle {:cx (+ 5 (* 10 x)) :cy (+ 5 (* 10 y)) :r 3 :fill "orange"}])})
-
-(def color-lookup
-  {:red         "#f88"
-   :blue        "blue"
-   :bumper      "#ccc"
-   :ring        "yellow"
-   :trampoline  "orange"})
 
 (def LEVEL_ITEM (nth levels 0))
 
@@ -340,6 +325,13 @@
        (scale 1 1.2)
        (translate 400 600)))
 
+(def color-lookup
+  {:red         "#f88"
+   :blue        "blue"
+   :bumper      "#ccc"
+   :ring        "yellow"
+   :trampoline  "orange"})
+
 (defn threedee-view-tf []
   (let [leveldata (:data (:level LEVEL_ITEM))
         calculated (sonic-state-to-calculated @sonic-state)
@@ -375,5 +367,19 @@
 
 ;; Called once, during initial page load
 (defn ^:export main []
+  (set!
+   (.-onkeydown js/document)
+   (fn [event]
+     (let [keycode (.-keyCode event)]
+       (swap! keyboard-input #(conj % keycode)))))
+
+  (set!
+   (.-onkeyup js/document)
+   (fn [event]
+     (let [keycode (.-keyCode event)]
+       (swap! keyboard-input #(disj % keycode)))))
+
+
   (js/setTimeout tick-sonic-state 1000)
+
   (start))
