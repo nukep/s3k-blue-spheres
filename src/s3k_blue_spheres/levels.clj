@@ -1,4 +1,4 @@
-(ns s3k-blue-spheres.test)
+(ns s3k-blue-spheres.levels)
 
 
 (def WIDTH 32)
@@ -18,7 +18,7 @@
 
 ;; This macro will load the level data from the file system and associate the data with names.
 ;; To minimise the size of the JS, level data will be parsed on the client-side.
-(defmacro loadLevels []
+(defmacro load-levels []
   (->> (concat
          ;; Sonic 3 levels
          (->> (range 1 9)

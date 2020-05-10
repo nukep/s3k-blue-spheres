@@ -1,13 +1,15 @@
 (ns s3k-blue-spheres.core
-  (:require-macros [s3k-blue-spheres.test :as test])
-  (:require [reagent.core :as reagent]))
+  (:require-macros [s3k-blue-spheres.levels :refer [load-levels]])
+  (:require [reagent.core :as r]
+            [reagent.dom :as rdom]
+            [clojure.pprint :refer [pprint]]))
 
 (enable-console-print!)
 
 (def WIDTH 32)
 (def HEIGHT 32)
 
-(defn parseLevel [data]
+(defn parse-level [data]
   ;; The uncompressed level data in the Sonic 3 ROM is laid out in memory as such:
   ;; <ITEM DATA: 1024 bytes> <METADATA: 8 bytes>
   (let [itemdata (subvec data 0 (* WIDTH HEIGHT))
@@ -24,12 +26,13 @@
      :direction ({0x00 :up 0x40 :left 0x80 :down 0xC0 :right} (get metadata 0))}))
 
 ;; Load and parse levels
-(def levels
-  (map (fn [x] {:name (x :name) :level (parseLevel (x :data))})
-       (test/loadLevels)))
+(defonce levels
+  (vec (for [item (load-levels)]
+         {:name (:name item)
+          :level (parse-level (:data item))})))
 
 (defn debugdata [x]
-  [:pre [:text (with-out-str (cljs.pprint/pprint x))]])
+  [:pre [:text (with-out-str (pprint x))]])
 
 ;;; Transformation functions.
 ;;; The point to be transformed is always the last argument,
@@ -102,9 +105,9 @@
                x (+ (* 2 xx) offset)]
            [[x y] [(inc x) y] [(inc x) (inc y)] [x (inc y)]]))))
 
-(def keyboard-input (reagent/atom #{}))
+(def keyboard-input (r/atom #{}))
 
-(def sonic-state (reagent/atom {:queued-turn nil :transition 0 :position [1 1] :direction :north :mode :forward}))
+(def sonic-state (r/atom {:queued-turn nil :transition 0 :position [1 1] :direction :north :mode :forward}))
 
 (def turn
   {:left  {:north :west
@@ -271,7 +274,7 @@
      (swap! keyboard-input #(disj % keycode)))))
 
 ; (defn threedee-view []
-;   (let [tick (reagent/atom 0)]
+;   (let [tick (r/atom 0)]
 ;     (fn []
 ;       (let [{rotate :rotate translate-y :translate-y} (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state))]
 ;         ; (js/requestAnimationFrame #(swap! tick inc))
@@ -365,19 +368,12 @@
      [:pre [:text (str (sonic-state-to-calculated @sonic-state))]]
      [:pre [:text (str (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state)))]]]))
 
-;; Render the application
+;; Called on initial page load, and after reloads from file changes.
 (defn ^:dev/after-load start []
-  (reagent/render-component [show-state]
-                            (. js/document (getElementById "app"))))
+  (rdom/render [show-state]
+               (. js/document (getElementById "app"))))
 
+;; Called once, during initial page load
 (defn ^:export main []
+  (js/setTimeout tick-sonic-state 1000)
   (start))
-
-(defonce setup-stuff
-  (do (js/setTimeout tick-sonic-state 1000)))
-
-(defn on-js-reload [])
-  ;; optionally touch your app-state to force rerendering depending on
-  ;; your application
-
-  ;; (swap! app-state update-in [:__figwheel_counter] inc))
