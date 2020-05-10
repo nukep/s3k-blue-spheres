@@ -21,5 +21,11 @@ To create a production build run:
 yarn build
 ```
 
-And open your browser in `resources/public/index.html`. You will not
-get live reloading, nor a REPL.
+To view the build without a hassle:
+
+```
+yarn serve-built
+```
+
+And open your browser at [localhost:3000](http://localhost:3000/).
+You will not get live reloading, nor a REPL.
