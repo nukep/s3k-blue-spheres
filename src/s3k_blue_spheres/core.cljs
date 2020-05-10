@@ -366,8 +366,12 @@
      [:pre [:text (str (calculated-to-floor-tf (sonic-state-to-calculated @sonic-state)))]]]))
 
 ;; Render the application
-(reagent/render-component [show-state]
-                          (. js/document (getElementById "app")))
+(defn ^:dev/after-load start []
+  (reagent/render-component [show-state]
+                            (. js/document (getElementById "app"))))
+
+(defn ^:export main []
+  (start))
 
 (defonce setup-stuff
   (do (js/setTimeout tick-sonic-state 1000)))

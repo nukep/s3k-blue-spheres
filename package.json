@@ -1,0 +1,23 @@
+{
+  "name": "s3k-blue-spheres",
+  "version": "0.1.0",
+  "main": "index.js",
+  "repository": "git@github.com:nukep/s3k-blue-spheres.git",
+  "author": "Danny Spencer",
+  "license": "MIT",
+  "//": "I set -Xmx, because Java likes to hog gigabytes of RAM after lengthy REPL hacking",
+  "scripts": {
+    "build": "shadow-cljs release app",
+    "serve-built": "serve -n -l 3000 public",
+    "watch": "JAVA_TOOL_OPTIONS=-Xmx512m shadow-cljs watch app"
+  },
+  "dependencies": {
+    "create-react-class": "^15.6.3",
+    "react": "^16.13.1",
+    "react-dom": "^16.13.1"
+  },
+  "devDependencies": {
+    "serve": "^11.3.0",
+    "shadow-cljs": "^2.9.0"
+  }
+}
